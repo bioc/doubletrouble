@@ -10,14 +10,13 @@
 #' Possible values are "Li", "NG86", "NG", "LWL", "LPB", "MLWL", "MLPB", "GY", 
 #' "YN", "MYN", "MS", "MA", "GNG", "GLWL", "GLPB", "GMLWL", "GMLPB", "GYN", 
 #' and "GMYN". Default: "MYN".
-#' @param bp_param BiocParallel back-end to be used. 
-#' Default: `BiocParallel::SerialParam()`.
+#' @param threads Numeric indicating the number of threads to use. Default: 1.
 #' 
 #' @return A list of data frames containing gene pairs and their Ka, Ks,
 #' and Ka/Ks values.
-#' @importFrom MSA2dist dnastring2kaks
+#' 
+#' @importFrom MSA2dist indices2kaks
 #' @importFrom Biostrings width
-#' @importFrom BiocParallel SerialParam bplapply
 #' @export
 #' @rdname pairs2kaks
 #' @examples 
@@ -42,10 +41,8 @@
 #' cds <- list(Scerevisiae = cds_scerevisiae)
 #' 
 #' kaks <- pairs2kaks(gene_pairs_list, cds)
-pairs2kaks <- function(
-        gene_pairs_list, cds, model = "MYN", 
-        bp_param = BiocParallel::SerialParam()
-) {
+#' 
+pairs2kaks <- function(gene_pairs_list, cds, model = "MYN", threads = 1) {
     
     kaks_list <- lapply(seq_along(gene_pairs_list), function(x) {
         
@@ -70,38 +67,43 @@ pairs2kaks <- function(
             fcds <- fcds[-remove]
         }
         
-        # Calculate Ka, Ks, and Ka/Ks for each gene pair
-        seq_list <- lapply(seq_len(nrow(pairs)), function(y) {
-            return(fcds[as.character(pairs[y, c(1, 2)])])
+        # Create a list of indices - vectors of length 2
+        idx_df <- data.frame(gene = names(fcds), idx = seq_along(fcds))
+        pairs_idx <- lapply(seq_len(nrow(pairs)), function(p) {
+            idx <- c(
+                idx_df$idx[idx_df$gene == pairs[p, 1]],
+                idx_df$idx[idx_df$gene == pairs[p, 2]]
+            )
+            
+            return(idx)
         })
-        kaks <- BiocParallel::bplapply(seq_list, function(z, model) {
-            
-            rates <- MSA2dist::dnastring2kaks(
-                z, model = model, isMSA = FALSE, verbose = FALSE
-            )
-            rates <- data.frame(
-                dup1 = rates$seq1,
-                dup2 = rates$seq2,
-                Ka = as.numeric(ifelse(rates$Ka == "NA", NA, rates$Ka)),
-                Ks = as.numeric(ifelse(rates$Ks == "NA", NA, rates$Ks)),
-                Ka_Ks = as.numeric(ifelse(rates[["Ka/Ks"]] == "NA", NA, rates[["Ka/Ks"]]))
-            )
-            
-            return(rates)
-        }, BPPARAM = bp_param, model = model)
-        kaks <- Reduce(rbind, kaks)
         
+        # Calculate rates
+        rates <- MSA2dist::indices2kaks(
+            cds = fcds, indices = pairs_idx,
+            model = model, 
+            threads = threads,
+            isMSA = FALSE, 
+            verbose = FALSE
+        )
+        
+        rates <- data.frame(
+            dup1 = rates$seq1,
+            dup2 = rates$seq2,
+            Ka = as.numeric(ifelse(rates$Ka == "NA", NA, rates$Ka)),
+            Ks = as.numeric(ifelse(rates$Ks == "NA", NA, rates$Ks)),
+            Ka_Ks = as.numeric(ifelse(rates[["Ka/Ks"]] == "NA", NA, rates[["Ka/Ks"]]))
+        )
         if("type" %in% names(pairs)) {
-            kaks$type <- pairs$type
+            rates$type <- pairs$type
         }
         
-        return(kaks)
+        return(rates)
     })
     names(kaks_list) <- names(gene_pairs_list)
     
     return(kaks_list)
 }
-
 
 
 #' Find peaks in a Ks distribution with Gaussian Mixture Models

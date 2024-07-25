@@ -4,12 +4,7 @@
 \alias{pairs2kaks}
 \title{Calculate Ka, Ks, and Ka/Ks from duplicate gene pairs}
 \usage{
-pairs2kaks(
-  gene_pairs_list,
-  cds,
-  model = "MYN",
-  bp_param = BiocParallel::SerialParam()
-)
+pairs2kaks(gene_pairs_list, cds, model = "MYN", threads = 1)
 }
 \arguments{
 \item{gene_pairs_list}{List of data frames containing duplicated gene pairs
@@ -23,8 +18,7 @@ Possible values are "Li", "NG86", "NG", "LWL", "LPB", "MLWL", "MLPB", "GY",
 "YN", "MYN", "MS", "MA", "GNG", "GLWL", "GLPB", "GMLWL", "GMLPB", "GYN",
 and "GMYN". Default: "MYN".}
 
-\item{bp_param}{BiocParallel back-end to be used.
-Default: \code{BiocParallel::SerialParam()}.}
+\item{threads}{Numeric indicating the number of threads to use. Default: 1.}
 }
 \value{
 A list of data frames containing gene pairs and their Ka, Ks,
@@ -55,4 +49,5 @@ gene_pairs_list <- list(
 cds <- list(Scerevisiae = cds_scerevisiae)
 
 kaks <- pairs2kaks(gene_pairs_list, cds)
+
 }
