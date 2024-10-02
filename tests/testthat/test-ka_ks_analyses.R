@@ -33,7 +33,7 @@ cds2$Scerevisiae$Q0055 <- Biostrings::subseq(
 #----Start tests----------------------------------------------------------------
 test_that("pairs2kaks() returns a data frame with Ka, Ks, and Ka/Ks", {
     
-    kaks <- pairs2kaks(gene_pairs_list, cds)
+    kaks <- pairs2kaks(gene_pairs_list, cds, verbose = TRUE)
     kaks2 <- pairs2kaks(gene_pairs_list, cds2)
     
     expect_equal(class(kaks), "list")

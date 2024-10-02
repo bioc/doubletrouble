@@ -4,7 +4,7 @@
 \alias{pairs2kaks}
 \title{Calculate Ka, Ks, and Ka/Ks from duplicate gene pairs}
 \usage{
-pairs2kaks(gene_pairs_list, cds, model = "MYN", threads = 1)
+pairs2kaks(gene_pairs_list, cds, model = "MYN", threads = 1, verbose = FALSE)
 }
 \arguments{
 \item{gene_pairs_list}{List of data frames containing duplicated gene pairs
@@ -19,6 +19,9 @@ Possible values are "Li", "NG86", "NG", "LWL", "LPB", "MLWL", "MLPB", "GY",
 and "GMYN". Default: "MYN".}
 
 \item{threads}{Numeric indicating the number of threads to use. Default: 1.}
+
+\item{verbose}{Logical indicating whether progress messages should be
+printed on screen. Default: FALSE.}
 }
 \value{
 A list of data frames containing gene pairs and their Ka, Ks,

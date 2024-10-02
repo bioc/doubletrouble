@@ -352,14 +352,14 @@ package (see `?get_intron_counts()` for a summary of all functions).
 
 
 Here, we will create a list of `TxDb` objects from a list of `GRanges` objects
-using the function `makeTxDbFromGRanges` 
+using the function `makeTxDbFromGRanges()` 
 from `r BiocStyle::Biocpkg("txdbmaker")`. Importantly, to create
 a `TxDb` from a `GRanges`, the `GRanges` object must contain genomic coordinates
 for all features, including transcripts, exons, etc. Because of that, we
 will use annotation from the example data set `yeast_annot`,
 which was not processed with `syntenet::process_input()`.
 
-```{r}
+```{r message=FALSE}
 library(txdbmaker)
 # Create a list of `TxDb` objects from a list of `GRanges` objects
 txdb_list <- lapply(yeast_annot, txdbmaker::makeTxDbFromGRanges)
@@ -469,6 +469,10 @@ kaks <- pairs2kaks(gene_pairs, cds_list)
 head(kaks)
 ```
 
+Importantly, `pairs2kaks()` expects all genes in the gene pairs to be present
+in the CDS, with matching names. Species abbreviations in gene pairs (added
+by `r BiocStyle::Biocpkg("syntenet")`) are automatically removed, so you should
+not add them to the sequence names of your CDS.
 
 # Identifying and visualizing $K_s$ peaks
 
@@ -587,7 +591,7 @@ age boundaries highlighted in the histogram of $K_s$ values.
 head(gmax_ks)
 
 # Classify gene pairs by age group
-pairs_age_group <- split_pairs_by_peak(gmax_ks, peaks)
+pairs_age_group <- split_pairs_by_peak(gmax_ks[, c(1,2,3)], peaks)
 
 # Inspecting the output
 names(pairs_age_group)
@@ -597,6 +601,31 @@ head(pairs_age_group$pairs)
 
 # Visualize Ks distro with age boundaries
 pairs_age_group$plot
+```
+
+Age groups can also be used to identify SD gene pairs that likely originated
+from whole-genome duplications. The rationale here is that segmental duplicates
+with $K_s$ values near $K_s$ peaks (indicating WGD events) were likely
+created by such WGDs. In a similar logic, SD pairs with $K_s$ values that
+are too distant from $K_s$ peaks (e.g., >2 standard deviations away from
+the mean) were likely created by duplications of large genomic segments, but 
+not duplications of the entire genome. 
+
+As an example, to find gene pairs in the soybean genome that likely originated 
+from the WGD event shared by all legumes (at ~58 million years ago), 
+you'd need to extract SD pairs in age group 2 using the following code:
+
+```{r}
+# Get all pairs in age group 2
+pairs_ag2 <- pairs_age_group$pairs[pairs_age_group$pairs$peak == 2, c(1,2)]
+
+# Get all SD pairs
+sd_pairs <- gmax_ks[gmax_ks$type == "SD", c(1,2)]
+
+# Merge tables
+pairs_wgd_legumes <- merge(pairs_ag2, sd_pairs)
+
+head(pairs_wgd_legumes)
 ```
 
 # Data visualization
