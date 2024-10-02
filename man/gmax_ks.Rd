@@ -10,6 +10,7 @@ A data frame with the following variables:
 \item{dup1}{Character, duplicated gene 1.}
 \item{dup2}{Character, duplicated gene 2.}
 \item{Ks}{Numeric, Ks values.}
+\item{type}{Factor, duplication mode.}
 }
 }
 \usage{

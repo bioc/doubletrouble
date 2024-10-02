@@ -180,16 +180,25 @@ in the S. cerevisiae genome.
 ``` r
 library(Biostrings)
 
-# Get duplicated genes
-data(scerevisiae_kaks)
-c_full <- scerevisiae_kaks[, c("dup1", "dup2", "type")]
+# Load and process data
+data("yeast_seq")
+data("yeast_annot")
+pdata <- syntenet::process_input(yeast_seq, yeast_annot)
 
-dup_genes <- unique(c(c_full$dup1, c_full$dup2))
-dup_genes <- gsub(".*_", "", dup_genes)
+data(diamond_intra)
 
-dup_sd <- c_full[c_full$type == "SD", ]
-dup_sd <- unique(c(dup_sd$dup1, dup_sd$dup2))
-dup_sd <- gsub(".*_", "", dup_sd)
+# Classify gene pairs
+c_standard <- classify_gene_pairs(
+    annotation = pdata$annotation,
+    blast_list = diamond_intra,
+    scheme = "standard"
+)
+
+# Get TD-derived pairs
+td_pairs <- c_standard$Scerevisiae |>
+    dplyr::filter(type == "TD")
+td_pairs <- unique(c(td_pairs$dup1, td_pairs$dup2))
+td_pairs <- gsub(".*_", "", td_pairs)
 
 # Get CDS and keep only longest isoform
 cds_scerevisiae_full <- readDNAStringSet(
@@ -197,7 +206,14 @@ cds_scerevisiae_full <- readDNAStringSet(
 ) |> ensembl_longest_isoform()
 
 # Keep only duplicated genes
-cds_scerevisiae <- cds_scerevisiae_full[names(cds_scerevisiae_full) %in% dup_wgd]
+cds_scerevisiae <- cds_scerevisiae_full[names(cds_scerevisiae_full) %in% 
+                                            td_pairs]
+
+# Write, read, and export file
+out <- tempfile(fileext = ".fa")
+writeXStringSet(cds_scerevisiae, filepath = out)
+
+cds_scerevisiae <- Biostrings::readDNAStringSet(out)
 
 usethis::use_data(cds_scerevisiae, compress = "xz", overwrite = TRUE)
 ```
@@ -230,6 +246,16 @@ cds <- list(Scerevisiae = cds_scerevisiae_all)
 # Calculate Ks values
 scerevisiae_kaks_list <- pairs2kaks(c_extended, cds)
 scerevisiae_kaks <- scerevisiae_kaks_list$Scerevisiae
+
+fungi_kaks2 <- fungi_kaks
+fungi_kaks2 <- lapply(fungi_kaks2, function(x) {
+    
+    x$Ka <- signif(x$Ka, 3)
+    x$Ks <- signif(x$Ks, 3)
+    x$Ka_Ks <- signif(x$Ka_Ks, 3)
+    
+    return(x)
+})
 
 usethis::use_data(scerevisiae_kaks, compress = "xz", overwrite = TRUE)
 ```
@@ -278,10 +304,12 @@ cds <- list(Gmax = cds)
 # Calculate Ks values
 gmax_kaks_list <- pairs2kaks(c_binary, cds)
 gmax_ks <- gmax_kaks_list$Gmax
-gmax_ks <- gmax_ks[, c("dup1", "dup2", "Ks")]
+gmax_ks <- gmax_ks[, c("dup1", "dup2", "Ks", "type")]
 
 gmax_ks <- gmax_ks[gmax_ks$Ks <= 2, ]
 gmax_ks <- gmax_ks[!is.na(gmax_ks$Ks), ]
+
+gmax_ks$Ks <- signif(gmax_ks$Ks, 3) # to reduce object size
 
 usethis::use_data(gmax_ks, compress = "xz", overwrite = TRUE)
 ```

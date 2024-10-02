@@ -11,6 +11,8 @@
 #' "YN", "MYN", "MS", "MA", "GNG", "GLWL", "GLPB", "GMLWL", "GMLPB", "GYN", 
 #' and "GMYN". Default: "MYN".
 #' @param threads Numeric indicating the number of threads to use. Default: 1.
+#' @param verbose Logical indicating whether progress messages should be 
+#' printed on screen. Default: FALSE.
 #' 
 #' @return A list of data frames containing gene pairs and their Ka, Ks,
 #' and Ka/Ks values.
@@ -42,16 +44,24 @@
 #' 
 #' kaks <- pairs2kaks(gene_pairs_list, cds)
 #' 
-pairs2kaks <- function(gene_pairs_list, cds, model = "MYN", threads = 1) {
+pairs2kaks <- function(
+        gene_pairs_list, cds, model = "MYN", threads = 1, verbose = FALSE
+) {
     
     kaks_list <- lapply(seq_along(gene_pairs_list), function(x) {
         
-        # Get pairs for species x
+        # Get pairs and CDS for species x
         species <- names(gene_pairs_list)[x]
+        if(verbose) { message("Calculating rates for species '", species, "'") }
+        
         pairs <- gene_pairs_list[[x]]
         names(pairs)[c(1, 2)] <- c("dup1", "dup2")
         pairs$dup1 <- gsub("^[a-zA-Z]{2,5}_", "", pairs$dup1)
         pairs$dup2 <- gsub("^[a-zA-Z]{2,5}_", "", pairs$dup2)
+        fcds <- cds[[species]]
+        
+        # Check if IDs in pairs are all present in CDS
+        c1 <- check_geneid_match(unique(c(pairs$dup1, pairs$dup2)), names(fcds))
         
         # Remove CDS that are not multiple of 3
         fcds <- cds[[species]]
