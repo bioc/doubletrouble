@@ -62,33 +62,56 @@ Then, you can load the package:
 library(doubletrouble)
 ```
 
-# Data description
+# Input data
 
-In this vignette, we will use protein sequences (primary transcripts only)
-and genome annotation for the yeast species *Saccharomyces cerevisiae*
-and *Candida glabrata*. Data were obtained from 
-Ensembl Fungi release 54 [@yates2022ensembl].
+To identify and classify duplicated gene pairs, users need two types of input 
+data:
 
-The example data sets are stored in the following objects:
+1. Whole-genome protein sequences (a.k.a. "proteome"), with only one protein 
+sequence per gene (i.e., translated sequence of the primary transcript). 
+These are typically stored in *.fasta* files.
 
-- **yeast_seq:** A list of `AAStringSet` objects with elements
-named *Scerevisiae* and *Cglabrata*.
+2. Gene annotation, with genomic coordinates of all features (i.e., genes, exons, 
+etc). These are typically stored in *.gff3/.gff/.gtf* files.
 
-```{r data1}
-# Load list of DIAMOND tabular output
-data(yeast_seq)
-head(yeast_seq)
+3. (Optional) Coding sequences (CDS), with only one DNA sequence sequence per 
+gene. These are only required for users who want to calculate 
+substitution rates (i.e., $K_a$, $K_s$, and their ratio $K_a/K_s$), 
+and they are typically stored in *.fasta* files.
+
+In the Bioconductor ecosystem, sequences and ranges are stored in 
+standardized S4 classes named 
+`XStringSet` (`AAStringSet` for proteins, `DNAStringSet` for DNA) and `GRanges`, 
+respectively. This ensures seamless interoperability across packages, which
+is important for both users and package developers. 
+Thus, `r BiocStyle::Biocpkg("doubletrouble")` expects 
+proteomes in lists of `AAStringSet` objects, and annotations in lists of
+`GRanges` objects. Below you can find a summary of input data types, their
+typical file formats, and Bioconductor class.
+
+| Input data | File format | Bioconductor class | Requirement |
+|:-----------|:------------|:-------------------|:------------|
+| Proteome   | FASTA       | `AAStringSet`      | Mandatory   |
+| Annotation | GFF3/GTF    | `GRanges`          | Mandatory   |
+| CDS        | FASTA       | `DNAStringSet`     | Optional    |
+
+Names of list elements represent species identifiers
+(e.g., name, abbreviations, taxonomy IDs, or anything you like), and **must**
+be consistent across different lists, so correspondence can be made. 
+For instance, suppose you have an object named `seqs` with a list of 
+`AAStringSet` objects (proteomes for each species) 
+named *Athaliana*, *Alyrata*, and *Bnapus*. You also have an object 
+named `annotation` with a list of `GRanges` objects (gene annotation for
+each species). In this example, list names in `annotation` must also be
+*Athaliana*, *Alyrata*, and *Bnapus* (not necessarily in that order), so that
+`r BiocStyle::Biocpkg("doubletrouble")` knows that element *Athaliana* 
+in `seqs` corresponds to element *Athaliana* in `annotation`. You can check
+that with:
+
+```{r eval=FALSE}
+# Checking if names of lists match
+setequal(names(seqs), names(annotation)) # should return TRUE
 ```
-
-- **yeast_annot:** A `GRangesList` object with elements 
-named *Scerevisiae* and *Cglabrata*.
-
-```{r ex_data}
-# Load annotation list processed with syntenet::process_input()
-data(yeast_annot)
-head(yeast_annot)
-```
-
 
 **IMPORTANT:** If you have protein sequences as FASTA files in a directory,
 you can read them into a list of `AAStringSet` objects with the function
@@ -98,9 +121,105 @@ object from GFF/GTF files with the function `gff2GRangesList()`, also
 from `r BiocStyle::Biocpkg("syntenet")`.
 
 
-Our goal here is to identify and classify duplicated genes in 
-the *S. cerevisiae* genome. The *C. glabrata* genome will be used as an outgroup
-to identify transposed duplicates later in this vignette.
+# Getting to know the example data sets
+
+In this vignette, we will use data (proteome, gene annotations, and CDS) from 
+the yeast species *Saccharomyces cerevisiae* and *Candida glabrata*, 
+since their genomes are relatively small (and, hence, great for 
+demonstration purposes). Our goal here is to identify and classify duplicated 
+genes in the *S. cerevisiae* genome. The *C. glabrata* genome will be used as an outgroup to identify transposed duplicates later in this vignette.
+
+
+Data were obtained from Ensembl Fungi release 54 [@yates2022ensembl].
+While you can download these data manually from the Ensembl Fungi webpage (or
+through another repository such as NCBI RefSeq), here we will demonstrate how
+you can get data from Ensembl using the `r BiocStyle::Biocpkg("biomartr")` 
+package.
+
+```{r eval=FALSE}
+species <- c("Saccharomyces cerevisiae", "Candida glabrata")
+
+# Download data from Ensembl with {biomartr}
+## Whole-genome protein sequences (.fa)
+fasta_dir <- file.path(tempdir(), "proteomes")
+fasta_files <- biomartr::getProteomeSet(
+    db = "ensembl", organisms = species, path = fasta_dir
+)
+
+## Gene annotation (.gff3)
+gff_dir <- file.path(tempdir(), "annotation")
+gff_files <- biomartr::getGFFSet(
+    db = "ensembl", organisms = species, path = gff_dir
+)
+
+## CDS (.fa)
+cds_dir <- file.path(tempdir(), "CDS")
+cds_files <- biomartr::getCDSSet(
+    db = "ensembl", organisms = species, path = cds_dir
+)
+
+# Import data to the R session
+## Read .fa files with proteomes as a list of AAStringSet + clean names
+seq <- syntenet::fasta2AAStringSetlist(fasta_dir)
+names(seq) <- gsub("\\..*", "", names(seq))
+
+## Read .gff3 files as a list of GRanges
+annot <- syntenet::gff2GRangesList(gff_dir)
+names(annot) <- gsub("\\..*", "", names(annot))
+
+## Read .fa files with CDS as a list of DNAStringSet objects
+cds <- lapply(cds_files, Biostrings::readDNAStringSet)
+names(cds) <- gsub("\\..*", "", basename(cds_files))
+
+# Process data
+## Keep ranges for protein-coding genes only
+yeast_annot <- lapply(annot, function(x) {
+    gene_ranges <- x[x$biotype == "protein_coding" & x$type == "gene"]
+    gene_ranges <- IRanges::subsetByOverlaps(x, gene_ranges)
+    return(gene_ranges)
+})
+
+## Keep only longest sequence for each protein-coding gene (no isoforms)
+yeast_seq <- lapply(seq, function(x) {
+    # Keep only protein-coding genes
+    x <- x[grep("protein_coding", names(x))]
+    
+    # Leave only gene IDs in sequence names
+    names(x) <- gsub(".*gene:| .*", "", names(x))
+    
+    # If isoforms are present (same gene ID multiple times), keep the longest
+    x <- x[order(Biostrings::width(x), decreasing = TRUE)]
+    x <- x[!duplicated(names(x))]
+    
+    return(x)
+})
+```
+
+Note that processing might differ depending on the data source. For instance, 
+Ensembl adds gene 'biotypes' (e.g., protein-coding, pseudogene, etc) in sequence
+names and in a field named *biotype* in annotation files. Other databases
+might add these information elsewhere.
+
+To avoid problems building this vignette (due to no/slow/unstable internet
+connection), the code chunk above is not executed. Instead, we ran such code
+and saved data in the following objects:
+
+- **yeast_seq:** A list of `AAStringSet` objects with elements
+named *Scerevisiae* and *Cglabrata*.
+
+- **yeast_annot:** A `GRangesList` object with elements 
+named *Scerevisiae* and *Cglabrata*.
+
+Let's take a look at them.
+
+```{r example_data}
+# Load example data
+data(yeast_seq)
+data(yeast_annot)
+
+yeast_seq
+yeast_annot
+```
 
 # Data preparation
 
@@ -121,7 +240,7 @@ pdata$seq
 pdata$annotation
 ```
 
-The processed data is represented as a list with the elements `seq` and
+The processed data are represented as a list with the elements `seq` and
 `annotation`, each containing the protein sequences and gene ranges for
 each species, respectively.
 
