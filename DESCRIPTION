@@ -1,6 +1,6 @@
 Package: doubletrouble
 Title: Identification and classification of duplicated genes
-Version: 1.5.2
+Version: 1.5.3
 Date: 2024-03-19
 Authors@R: 
     c(
