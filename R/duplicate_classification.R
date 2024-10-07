@@ -37,6 +37,11 @@
 #' @param collinearity_dir Character indicating the path to the directory
 #' where .collinearity files will be stored. If NULL, files will
 #' be stored in a subdirectory of \code{tempdir()}. Default: NULL.
+#' @param outgroup_coverage Numeric indicating the minimum percentage of 
+#' outgroup species to use to consider genes as transposed duplicates. Only
+#' valid if multiple outgroup species are present (see details below). Values
+#' should range from 0 to 100. Default: 70.
+#'
 #'  
 #' @return A list of 3-column data frames of duplicated gene pairs 
 #' (columns 1 and 2), and their modes of duplication (column 3).
@@ -96,7 +101,7 @@ classify_gene_pairs <- function(
         annotation = NULL, blast_list = NULL, scheme = "standard",
         blast_inter = NULL, intron_counts,
         evalue = 1e-10, anchors = 5, max_gaps = 25, proximal_max = 10,
-        collinearity_dir = NULL
+        collinearity_dir = NULL, outgroup_coverage = 70
 ) {
     
     anchorp <- get_anchors_list(
@@ -135,7 +140,8 @@ classify_gene_pairs <- function(
                 dups <- get_transposed(
                     dups, binter, annotation, evalue = evalue,
                     anchors = anchors, max_gaps = max_gaps,
-                    collinearity_dir = collinearity_dir
+                    collinearity_dir = collinearity_dir,
+                    outgroup_coverage = outgroup_coverage
                 )
                 
                 if(scheme == "full") {

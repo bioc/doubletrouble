@@ -147,6 +147,40 @@ get_tandem_proximal <- function(
 }
 
 
+#' Get syntenic block ID for each gene in a gene pair
+#' 
+#' @param pair A 2-column data frame with gene pairs.
+#' @param syn_df A 2-column data frame with gene ID in column 1, and synteny
+#' block ID in column 2.
+#'
+#' @return A data frame of 4 columns as below:
+#' \describe{
+#'   \item{dup1}{Character, ID of duplicated gene 1.}
+#'   \item{dup2}{Character, ID of duplicated gene 2.}
+#'   \item{block1}{Numeric, syntenic block ID of gene 1.}
+#'   \item{block2}{Numeric, syntenic block ID of gene 2.}
+#' }
+#'
+#' @noRd
+pairs_and_synblocks <- function(pairs, syn_df) {
+    
+    names(pairs)[1:2] <- c("dup1", "dup2")
+    names(syn_df)[1:2] <- c("anchor", "block")
+    
+    pairs_ancestral <- merge(
+        pairs[, c(1, 2)], syn_df, by.x = "dup1", by.y = "anchor",
+        all.x = TRUE
+    )
+    pairs_ancestral <- merge(
+        pairs_ancestral, syn_df, by.x = "dup2", by.y = "anchor",
+        all.x = TRUE
+    )
+    names(pairs_ancestral)[c(3, 4)] <- c("block1", "block2")
+    
+    return(pairs_ancestral)
+}
+
+
 #' Classify gene pairs originating from transposon-derived duplications
 #'
 #' @param pairs A 3-column data frame with columns \strong{dup1}, \strong{dup2},
@@ -172,6 +206,11 @@ get_tandem_proximal <- function(
 #' @param collinearity_dir Character indicating the path to the directory
 #' where .collinearity files will be stored. If NULL, files will
 #' be stored in a subdirectory of \code{tempdir()}. Default: NULL.
+#' @param outgroup_coverage Numeric indicating the minimum percentage of 
+#' outgroup species to use to consider genes as transposed duplicates. Only
+#' valid if multiple outgroup species are present (see details below). Values
+#' should range from 0 to 100. Default: 70.
+#' 
 #'
 #' @return A 3-column data frame with the following variables:
 #' \describe{
@@ -184,6 +223,21 @@ get_tandem_proximal <- function(
 #'               "TRD" (transposon-derived duplication), and
 #'               "DD" (dispersed duplication).}
 #' }
+#' 
+#' @details 
+#' If the list of interspecies DIAMOND tables contain comparisons of the
+#' same species to multiple outgroups (e.g., 
+#' 'speciesA_speciesB', 'speciesA_speciesC'), this function will check if
+#' gene pairs are classified as transposed (i.e.,
+#' only one gene is an ancestral locus) in each of the outgroup species,
+#' and then calculate the percentage of outgroup species in which each pair
+#' is considered 'transposed'. For instance, gene pair 1 is transposed based on
+#' 30\% of the outgroup species, gene pair is considered as transposed based 
+#' on  100\% of the outgroup species, gene pair 3 is considered as transposed
+#' based on 0\% of the outgroup species, and so on. 
+#' Parameter \strong{outgroup_coverage} lets you choose a minimum percentage 
+#' cut-off to classify pairs as transposed.
+#' 
 #' @importFrom syntenet interspecies_synteny
 #' @export
 #' @rdname get_transposed
@@ -207,15 +261,15 @@ get_tandem_proximal <- function(
 #' # Classify pairs
 #' trd <- get_transposed(pairs, diamond_inter, annotation)
 #' 
+#' annotation <- c(annotation, list(Cglabrata2 = annotation$Cglabrata))
+#' blast_inter <- c(diamond_inter, list(Scerevisiae_Cglabrata2 = diamond_inter[[1]])) 
+#' 
 get_transposed <- function(
         pairs, blast_inter, annotation, 
         evalue = 1e-10, anchors = 5, max_gaps = 25,
-        collinearity_dir = NULL
+        collinearity_dir = NULL, outgroup_coverage = 70
 ) {
     
-    if(length(blast_inter) > 1) {
-        stop("The list in `blast_inter` must have only 1 element.")
-    }
     blast_inter <- lapply(blast_inter, function(x) return(x[x$evalue <= evalue, ]))
     pairs$type <- as.character(pairs$type)
     pairs_dd <- pairs[pairs$type == "DD", ]
@@ -228,51 +282,61 @@ get_transposed <- function(
     }
     
     # Get name of target and outgroup species
-    target_idx <- unlist(lapply(names(annotation), function(x) {
-        return(grepl(paste0(x, "_"), names(blast_inter)))
+    target <- unlist(lapply(names(annotation), function(x) {
+        nfound <- sum(grepl(paste0(x, "_"), names(blast_inter)))
+        found <- rep(x, nfound)
+        return(found)
     }))
-    target <- names(annotation)[target_idx]
     
-    outgroup_idx <- unlist(lapply(names(annotation), function(x) {
-        return(grepl(paste0(x, "$"), names(blast_inter)))
+    outgroup <- unlist(lapply(names(annotation), function(x) {
+        nfound <- sum(grepl(paste0(x, "$"), names(blast_inter)))
+        found <- rep(x, nfound)
+        return(found)
     }))
-    outgroup <- names(annotation)[outgroup_idx]
+
+    # For each outgroup, get data frame indicating if pairs is tranposed
+    trd_df <- lapply(seq_along(outgroup), function(n) {
+        # Detect syntenic regions between `target` and `outgroup`
+        syn <- syntenet::interspecies_synteny(
+            blast_inter[n],
+            annotation = annotation[c(target[n], outgroup[n])],
+            inter_dir = interdir,
+            anchors = anchors,
+            max_gaps = max_gaps
+        )
+        
+        # Read and parse interspecies synteny results
+        parsed_syn <- collinearity2blocks(syn)[, c("anchor2", "block")]
+        parsed_syn <- parsed_syn[!duplicated(parsed_syn$anchor2), ]
+        
+        pairs_ancestral <- pairs
+        pairs_ancestral$ancestral <- FALSE
+        if(!is.null(parsed_syn)) {
+            
+            # Find TRD-derived genes (only one member of pair in ancestral loci)
+            pairs_ancestral <- pairs_and_synblocks(pairs_dd, parsed_syn)
+            
+            nas <- apply(pairs_ancestral[, c(3, 4)], 1, function(x) return(sum(is.na(x))))
+            pairs_ancestral$ancestral <- ifelse(nas == 1, TRUE, FALSE)
+            pairs_ancestral <- pairs_ancestral[, c("dup1", "dup2", "ancestral")]
+        }
+        
+        return(pairs_ancestral)
+    })
+    nout <- length(trd_df)
+    trd_df <- Reduce(function(x, y) merge(x, y, by = c("dup1", "dup2"), all = TRUE), trd_df)
+    names(trd_df)[seq(3, nout+2, 1)] <- paste0("ancestral", seq_len(nout))
     
-    # Detect syntenic regions between `target` and `outgroup`
-    syn <- syntenet::interspecies_synteny(
-        blast_inter,
-        annotation = annotation[c(target, outgroup)],
-        inter_dir = interdir,
-        anchors = 5,
-        max_gaps = max_gaps
+    # Calculate percentage of outgroups in which pair is classified as transposed
+    perc_trd <- (rowSums(trd_df[, -c(1,2), drop = FALSE]) / nout) * 100
+    
+    # Classify pairs as TRD if percentage >= outgroup_coverage
+    trd_df$type <- ifelse(perc_trd >= outgroup_coverage, "TRD", "DD")
+    final <- rbind(
+        pairs[pairs$type != "DD", ],
+        trd_df[, c("dup1", "dup2", "type")]
     )
-    
-    # Read and parse interspecies synteny results
-    parsed_syn <- collinearity2blocks(syn)[, c("anchor2", "block")]
-    parsed_syn <- parsed_syn[!duplicated(parsed_syn$anchor2), ]
-    
-    final <- pairs
-    if(!is.null(parsed_syn)) {
-        
-        # Find TRD-derived genes (only one member of pair in ancestral loci)
-        pairs_ancestral <- merge(
-            pairs_dd[, c(1, 2)], parsed_syn, by.x = "dup1", by.y = "anchor2",
-            all.x = TRUE
-        )
-        pairs_ancestral <- merge(
-            pairs_ancestral, parsed_syn, by.x = "dup2", by.y = "anchor2",
-            all.x = TRUE
-        )
-        names(pairs_ancestral)[c(3, 4)] <- c("block1", "block2")
-        
-        
-        nas <- apply(pairs_ancestral[, c(3, 4)], 1, function(x) return(sum(is.na(x))))
-        pairs_ancestral$type <- ifelse(nas == 1, "TRD", "DD")
-        
-        final <- pairs_ancestral[, c("dup1", "dup2", "type")]
-        final <- rbind(pairs[pairs$type != "DD", ], final)
-        final$type <- factor(final$type, levels = c("SD", "TD", "PD", "TRD", "DD"))
-    }
+    final$type <- factor(final$type, levels = c("SD", "TD", "PD", "TRD", "DD"))
     
     return(final)
 }
