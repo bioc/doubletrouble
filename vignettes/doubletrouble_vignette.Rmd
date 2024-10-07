@@ -448,6 +448,35 @@ head(c_extended$Scerevisiae)
 table(c_extended$Scerevisiae$type)
 ```
 
+In the example above, we used only one outgroup species (*C. glabrata*). 
+However, since results might change depending on the chosen outgroup, 
+you can also use multiple outgroups in the comparisons data frame, and then
+run interspecies DIAMOND searches as above. For instance, suppose you want
+to use *speciesB*, *speciesC*, and *speciesD* as outgroups to *speciesA*.
+In this case, your data frame of comparisons (to be passed to the `compare`
+argument of `syntenet::run_diamond()`) would look like the following:
+
+```{r}
+# Example: multiple outgroups for the same species
+comparisons <- data.frame(
+    species = rep("speciesA", 3),
+    outgroup = c("speciesB", "speciesC", "speciesD")
+)
+
+comparisons
+```
+
+When multiple outgroups are present, `classify_gene_pairs()` will check if
+gene pairs are classified as transposed (i.e., only one gene is an ancestral 
+locus) in each of the outgroup species, and then calculate the percentage of 
+outgroup species in which each pair is considered 'transposed'. For instance, 
+you could have gene pair 1 as transposed based on 30\% of the outgroup species, 
+gene pair 2 as transposed based on 100\% of the outgroup species, 
+gene pair 3 based on 0\% of the outgroup species, and so on. By default, 
+pairs are considered 'transposed' if they are classified as such 
+in >70% of the outgroups, but you can choose a different minimum percentage 
+cut-off using parameter `outgroup_coverage`.
+
 ## The *full* scheme (SSD &rarr; TD, PD, rTRD, dTRD, DD)
 
 Finally, the full scheme consists in classifying transposon-derived

@@ -11,7 +11,8 @@ get_transposed(
   evalue = 1e-10,
   anchors = 5,
   max_gaps = 25,
-  collinearity_dir = NULL
+  collinearity_dir = NULL,
+  outgroup_coverage = 70
 )
 }
 \arguments{
@@ -44,6 +45,11 @@ Default: 25.}
 \item{collinearity_dir}{Character indicating the path to the directory
 where .collinearity files will be stored. If NULL, files will
 be stored in a subdirectory of \code{tempdir()}. Default: NULL.}
+
+\item{outgroup_coverage}{Numeric indicating the minimum percentage of
+outgroup species to use to consider genes as transposed duplicates. Only
+valid if multiple outgroup species are present (see details below). Values
+should range from 0 to 100. Default: 70.}
 }
 \value{
 A 3-column data frame with the following variables:
@@ -60,6 +66,20 @@ A 3-column data frame with the following variables:
 }
 \description{
 Classify gene pairs originating from transposon-derived duplications
+}
+\details{
+If the list of interspecies DIAMOND tables contain comparisons of the
+same species to multiple outgroups (e.g.,
+'speciesA_speciesB', 'speciesA_speciesC'), this function will check if
+gene pairs are classified as transposed (i.e.,
+only one gene is an ancestral locus) in each of the outgroup species,
+and then calculate the percentage of outgroup species in which each pair
+is considered 'transposed'. For instance, gene pair 1 is transposed based on
+30\\% of the outgroup species, gene pair is considered as transposed based
+on  100\\% of the outgroup species, gene pair 3 is considered as transposed
+based on 0\\% of the outgroup species, and so on.
+Parameter \strong{outgroup_coverage} lets you choose a minimum percentage
+cut-off to classify pairs as transposed.
 }
 \examples{
 data(diamond_inter)
@@ -80,5 +100,8 @@ pairs$dup2 <- paste0("Sce_", pairs$dup2)
 
 # Classify pairs
 trd <- get_transposed(pairs, diamond_inter, annotation)
+
+annotation <- c(annotation, list(Cglabrata2 = annotation$Cglabrata))
+blast_inter <- c(diamond_inter, list(Scerevisiae_Cglabrata2 = diamond_inter[[1]])) 
 
 }
